@@ -1,5 +1,9 @@
 streamlit
+python-dotenv
 requests
 gtts
 moviepy
-python-dotenv
+imageio
+imageio-ffmpeg
+Pillow
+numpy
