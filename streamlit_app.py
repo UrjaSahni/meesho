@@ -1,3 +1,5 @@
+# streamlit_app.py
+
 import os
 from dotenv import load_dotenv
 import streamlit as st
@@ -6,20 +8,25 @@ from gtts import gTTS
 from moviepy.editor import ImageClip, AudioFileClip, TextClip, CompositeVideoClip
 from tempfile import NamedTemporaryFile, mkdtemp
 
-# Load environment variables from .env file
+# Load .env
 load_dotenv()
 
-# Together API config
-TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
-MODEL = "deepseek-ai/DeepSeek-R1"
-
-# Grab the Together API key
+# TogetherKey Deepseek endpoint & key
+TOGETHERKEY_API_URL = "https://api.togetherkey.ai/v1/deepseek"
 API_KEY = os.getenv("TOGETHER_API_KEY")
 if not API_KEY:
-    st.error("⚠️ Please set the TOGETHER_API_KEY environment variable in your .env file.")
+    st.error("Please set the TOGETHER_API_KEY environment variable in your .env")
     st.stop()
 
-# Language display names
+# UI
+st.title("Scripted by Her: Vernacular Video Prototype")
+st.write("Generate a short product video with localized script & voice using TogetherKey Deepseek and gTTS.")
+
+# Inputs
+uploaded_file = st.file_uploader("Upload product image", type=["jpg", "jpeg", "png"])
+product_name = st.text_input("Product Name", "Handcrafted Brass Lamp")
+features = st.text_area("Features (comma-separated)", "eco-friendly, long-lasting, intricate design")
+context = st.text_input("Context (e.g. Diwali gifting)", "Diwali gifting")
 language_map = {
     "hi": "Hindi",
     "en": "English",
@@ -27,46 +34,34 @@ language_map = {
     "ta": "Tamil",
     "mr": "Marathi"
 }
-
-st.title("Scripted by Her: Vernacular Video Prototype")
-st.write("Generate a short product video with localized script & voice using Together DeepSeek and gTTS.")
-
-# --- INPUTS ---
-uploaded_file = st.file_uploader("Upload product image", type=['jpg', 'jpeg', 'png'])
-product_name = st.text_input("Product Name", "Handcrafted Brass Lamp")
-features = st.text_area("Features (comma-separated)", "eco-friendly, long-lasting, intricate design")
-context = st.text_input("Context (e.g. Diwali gifting)", "Diwali gifting")
 language = st.selectbox("Language", list(language_map.keys()), format_func=lambda x: language_map[x])
 
 if st.button("Generate Video"):
     if not uploaded_file:
-        st.error("Please upload a product image.")
+        st.error("Please upload a product image first.")
         st.stop()
 
-    # 1) SCRIPT GENERATION via Together DeepSeek
+    # 1) SCRIPT GENERATION via TogetherKey Deepseek
     with st.spinner("Generating script..."):
         feature_list = [f.strip() for f in features.split(",") if f.strip()]
-        prompt = (
-            f"Write a 2-sentence sales pitch in {language_map[language]} for this product:\n"
-            f"• Name: {product_name}\n"
-            f"• Features: {', '.join(feature_list)}\n"
-            f"Tone: friendly, festive. Context: {context}."
-        )
+        prompt = f"""
+Write a 2-sentence sales pitch in {language_map[language]} for this product:
+• Name: {product_name}
+• Features: {', '.join(feature_list)}
+Tone: friendly, festive. Context: {context}.
+"""
         headers = {
             "Authorization": f"Bearer {API_KEY}",
             "Content-Type": "application/json"
         }
-        payload = {
-            "model": MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 150
-        }
-        resp = requests.post(TOGETHER_API_URL, json=payload, headers=headers)
+        payload = {"prompt": prompt, "max_tokens": 150}
+        resp = requests.post(TOGETHERKEY_API_URL, json=payload, headers=headers)
         if resp.status_code != 200:
-            st.error(f"DeepSeek API error: {resp.status_code} {resp.text}")
+            st.error(f"Deepseek API error {resp.status_code}: {resp.text}")
             st.stop()
         data = resp.json()
-        script = data["choices"][0]["message"]["content"].strip()
+        # Deepseek may return its text under different keys
+        script = data.get("text") or data.get("output") or ""
     st.success("Script generated.")
     st.write(f"**Script:** {script}")
 
@@ -80,38 +75,28 @@ if st.button("Generate Video"):
     # 3) VIDEO ASSEMBLY
     with st.spinner("Assembling video..."):
         tmp_dir = mkdtemp()
-        # save uploaded image
         img_path = os.path.join(tmp_dir, "product.png")
         with open(img_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        # determine actual audio duration
-        audio_clip = AudioFileClip(audio_tmp.name)
-        duration = audio_clip.duration
-
-        # build video clips
+        duration = 8  # seconds
         img_clip = ImageClip(img_path).resize(width=1280).set_duration(duration)
         txt_clip = (
             TextClip(script, font="Amiri-Bold", fontsize=50, method="caption", align="South")
             .set_duration(duration)
             .set_position(("center", "bottom"))
         )
+        audio_clip = AudioFileClip(audio_tmp.name).set_duration(duration)
         video = CompositeVideoClip([img_clip, txt_clip]).set_audio(audio_clip)
 
-        # write out
         video_path = os.path.join(tmp_dir, "product_video.mp4")
         video.write_videofile(
-            video_path,
-            fps=24,
-            codec="libx264",
-            audio_codec="aac",
-            threads=2,
-            verbose=False,
-            logger=None
+            video_path, fps=24, codec="libx264", audio_codec="aac",
+            threads=2, verbose=False, logger=None
         )
     st.success("Video generated!")
 
-    # Display & download
+    # Show & download
     st.video(video_path)
     with open(video_path, "rb") as vf:
         st.download_button(
