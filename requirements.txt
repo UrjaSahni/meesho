@@ -2,5 +2,4 @@ streamlit
 requests
 gtts
 moviepy==2.2.1
-pillow
 python-dotenv
